@@ -96,9 +96,6 @@ export const Header: React.FC<HeaderProps> = ({
                   TERRA
                 </span>
 
-                <span className="bg-[#C7F9CC] border border-[#1D3557]/30 text-[#1D3557] font-extrabold text-[9px] px-1.5 py-1 rounded-md leading-none">
-                  AI POWERED
-                </span>
               </div>
 
               <p className="text-[10px] font-semibold text-[#1D3557]/60 mt-1 tracking-wide">

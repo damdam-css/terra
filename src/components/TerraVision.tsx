@@ -16,6 +16,11 @@ import {
   Bot,
   Zap,
   Globe2,
+  Banana,
+  Battery,
+  Package,
+  Tag,
+  type LucideIcon,
 } from 'lucide-react';
 import { SAMPLE_SCAN_PRESETS } from '../data/mockData';
 import { WasteScanResult } from '../types';
@@ -42,6 +47,19 @@ export const TerraVision: React.FC<TerraVisionProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  /*
+   * UI ONLY:
+   * Mengubah nama icon dari mockData menjadi icon Lucide.
+   * Tidak mengubah data atau logic scanner.
+   */
+  const presetIconMap: Record<string, LucideIcon> = {
+    CupSoda,
+    Banana,
+    Battery,
+    Package,
+    Tag,
+  };
 
   useEffect(() => {
     return () => {
@@ -355,6 +373,13 @@ export const TerraVision: React.FC<TerraVisionProps> = ({
             {SAMPLE_SCAN_PRESETS.map((preset) => {
               const isSelected = selectedItemName === preset.name;
 
+              /*
+               * Ambil icon berdasarkan nama yang tersimpan di mockData.
+               * Kalau nama icon tidak ditemukan, gunakan Trash2 sebagai fallback.
+               */
+              const PresetIcon =
+                presetIconMap[preset.icon] || Trash2;
+
               return (
                 <button
                   key={preset.id}
@@ -370,7 +395,12 @@ export const TerraVision: React.FC<TerraVisionProps> = ({
                       : 'bg-white border-[#1D3557]/20 hover:border-[#1D3557] hover:bg-slate-50'
                   }`}
                 >
-                  <span className="text-xl">{preset.icon}</span>
+                  <span className="w-9 h-9 shrink-0 rounded-lg bg-[#F8FAFC] border border-[#1D3557]/15 flex items-center justify-center">
+                    <PresetIcon
+                      className="w-5 h-5 text-[#1D3557]"
+                      strokeWidth={2}
+                    />
+                  </span>
 
                   <div className="min-w-0 flex-1">
                     <div className="font-heading font-bold text-xs text-[#1D3557] truncate">

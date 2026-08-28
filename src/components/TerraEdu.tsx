@@ -94,7 +94,7 @@ export const TerraEdu: React.FC<TerraEduProps> = ({
               <span>TERRA EDU — MODUL PEMBELAJARAN INTERAKTIF</span>
             </div>
             <h2 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl text-[#1D3557]">
-              Jelajahi Balok Pengetahuan Bumi 📚🧱
+              Jelajahi Balok Pengetahuan Bumi
             </h2>
             <p className="text-sm text-[#1D3557]/75 font-medium mt-1">
               Pelajari dampak krisis sampah, prinsip 3R, teknik pengomposan, hingga ekonomi sirkular.
@@ -425,11 +425,11 @@ export const TerraEdu: React.FC<TerraEduProps> = ({
                         {selectedQuizOption === selectedModule.quiz.correctIndex ? (
                           <>
                             <Sparkles className="w-4 h-4 text-emerald-700" />
-                            <span>Jawaban Benar! Kamu mendapatkan +{selectedModule.xp} XP 🎉</span>
+                            <span>Jawaban Benar! Kamu mendapatkan +{selectedModule.xp} XP</span>
                           </>
                         ) : (
                           <>
-                            <span>Jawaban Kurang Tepat 💡</span>
+                            <span>Jawaban Kurang Tepat</span>
                           </>
                         )}
                       </div>

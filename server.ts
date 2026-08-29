@@ -1,9 +1,9 @@
+import { GoogleGenAI, Type } from "@google/genai";
+import { createClient } from "@supabase/supabase-js";
+import dotenv from "dotenv";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import dotenv from "dotenv";
-import { GoogleGenAI, Type } from "@google/genai";
-import { createClient } from "@supabase/supabase-js";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -69,10 +69,22 @@ async function startServer() {
 
   app.use(express.json({ limit: "25mb" }));
 
+  // Admin client for trusted server-side operations.
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
   const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
-    ? createClient(supabaseUrl, supabaseServiceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+    ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      })
+    : null;
+
+  // Separate Auth client for validating the user's access token.
+  const supabaseAuth = supabaseUrl && supabaseAnonKey
+    ? createClient(supabaseUrl, supabaseAnonKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      })
     : null;
 
   const wastePhotoBucket = "waste-deposit-photos";
@@ -119,21 +131,46 @@ async function startServer() {
     return true;
   };
 
+  async function getAuthenticatedUser(token: string) {
+    // Validate the access token through Supabase Auth.
+    // Fall back to the service-role client if the anon key is not configured.
+    if (supabaseAuth) {
+      const result = await supabaseAuth.auth.getUser(token);
+      if (!result.error && result.data.user) {
+        return { user: result.data.user, error: null };
+      }
+    }
+
+    if (supabaseAdmin) {
+      const result = await supabaseAdmin.auth.getUser(token);
+      if (!result.error && result.data.user) {
+        return { user: result.data.user, error: null };
+      }
+      return { user: null, error: result.error };
+    }
+
+    return { user: null, error: new Error("Supabase Auth belum dikonfigurasi.") };
+  }
+
   async function requireStaff(req: express.Request, res: express.Response) {
     if (!supabaseAdmin) {
       res.status(503).json({ error: "Server Supabase admin belum dikonfigurasi." });
       return null;
     }
-    const authHeader = req.headers.authorization || "";
-    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+
+    const authHeader = String(req.headers.authorization || "").trim();
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    const token = match?.[1]?.trim() || "";
+
     if (!token) {
       res.status(401).json({ error: "Token login diperlukan." });
       return null;
     }
 
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    const { user, error: userError } = await getAuthenticatedUser(token);
     if (userError || !user) {
-      res.status(401).json({ error: "Sesi login tidak valid." });
+      console.warn("Admin auth validation failed:", userError?.message || "unknown auth error");
+      res.status(401).json({ error: "Sesi login tidak valid. Silakan logout lalu login kembali." });
       return null;
     }
 
@@ -141,9 +178,25 @@ async function startServer() {
       .from("profiles")
       .select("id, role, is_blocked, full_name")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (profileError || !profile || profile.is_blocked || !["admin", "petugas"].includes(profile.role)) {
+    if (profileError) {
+      console.error("Admin profile lookup failed:", profileError.message);
+      res.status(500).json({ error: "Gagal membaca profil admin." });
+      return null;
+    }
+
+    if (!profile) {
+      res.status(403).json({ error: "Profil pengguna tidak ditemukan di tabel profiles." });
+      return null;
+    }
+
+    if (profile.is_blocked) {
+      res.status(403).json({ error: "Akun sedang diblokir." });
+      return null;
+    }
+
+    if (!["admin", "petugas"].includes(profile.role)) {
       res.status(403).json({ error: "Akses hanya untuk admin/petugas aktif." });
       return null;
     }
@@ -237,9 +290,9 @@ async function startServer() {
       return null;
     }
 
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    const { user, error: userError } = await getAuthenticatedUser(token);
     if (userError || !user) {
-      res.status(401).json({ error: "Sesi login tidak valid." });
+      res.status(401).json({ error: "Sesi login tidak valid. Silakan login kembali." });
       return null;
     }
 

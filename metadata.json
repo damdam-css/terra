@@ -1,0 +1,6 @@
+{
+  "name": "TERRA - Edukasi & Pengelolaan Sampah AI",
+  "description": "Platform edukasi dan pemilahan sampah cerdas berbasis AI dengan konsep antarmuka Modular Toy Brick interaktif (Kenali, Pilah, Olah, Jaga Bumi).",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

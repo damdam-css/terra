@@ -466,35 +466,60 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, email, onL
 
   const resetUserPassword = async (user: ManagedUser) => {
     if (role !== 'admin') return;
-    const password = window.prompt(`Masukkan password baru untuk ${user.email} (minimal 8 karakter):`);
+    const password = window.prompt(`Password baru untuk ${user.email} (minimal 8 karakter):`, '');
     if (password === null) return;
-    if (password.length < 8) { showError('Password baru minimal 8 karakter.'); return; }
-    const confirmPassword = window.prompt('Ketik ulang password baru untuk konfirmasi:');
-    if (confirmPassword !== password) { showError('Konfirmasi password tidak cocok.'); return; }
-    setBusyId(`reset-${user.id}`);
+    if (password.length < 8) {
+      showError('Password baru minimal 8 karakter.');
+      return;
+    }
+    const confirmPassword = window.prompt('Ketik ulang password baru untuk konfirmasi:', '');
+    if (confirmPassword === null) return;
+    if (password !== confirmPassword) {
+      showError('Konfirmasi password tidak cocok.');
+      return;
+    }
+    if (!window.confirm(`Reset password akun ${user.email}? Password lama akan langsung tidak berlaku.`)) return;
+
+    const id = `reset-${user.id}`;
+    setBusyId(id);
     try {
-      await api(`/api/admin/users/${user.id}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) });
+      await api(`/api/admin/users/${user.id}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      });
       showNotice('Password akun berhasil direset.');
     } catch (err: any) {
       showError(err?.message || 'Gagal mereset password akun.');
-    } finally { setBusyId(null); }
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const deleteUser = async (user: ManagedUser) => {
     if (role !== 'admin') return;
-    const confirmation = window.prompt(`PERINGATAN: akun ${user.email} akan dihapus permanen. Ketik YAKIN untuk melanjutkan:`);
+    const confirmation = window.prompt(
+      `PENGHAPUSAN PERMANEN akun ${user.email}.
+
+Ketik YAKIN untuk melanjutkan:`,
+      ''
+    );
     if (confirmation !== 'YAKIN') {
-      if (confirmation !== null) showError('Penghapusan dibatalkan. Ketik YAKIN persis untuk menghapus akun.');
+      if (confirmation !== null) showError('Penghapusan dibatalkan. Kamu harus mengetik YAKIN persis.');
       return;
     }
-    setBusyId(`delete-${user.id}`);
+    if (!window.confirm(`Hapus permanen akun ${user.email}? Data akun yang terkait akan ikut terhapus dan tindakan ini tidak dapat dibatalkan.`)) return;
+
+    const id = `delete-${user.id}`;
+    setBusyId(id);
     try {
-      await api(`/api/admin/users/${user.id}`, { method: 'DELETE' });
+      await api(`/api/admin/users/${user.id}/delete`, { method: 'POST' });
       showNotice('Akun berhasil dihapus permanen.');
       await loadUsers();
     } catch (err: any) {
       showError(err?.message || 'Gagal menghapus akun.');
-    } finally { setBusyId(null); }
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const toggleBlock = async (user: ManagedUser) => {
@@ -940,7 +965,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, email, onL
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-[#FAF9F5]"><tr className="text-left"><th className="p-4">Akun</th><th className="p-4">Role</th><th className="p-4">Email</th><th className="p-4">Status</th><th className="p-4">Aksi</th></tr></thead>
+          <thead className="bg-[#FAF9F5]"><tr className="text-left"><th className="p-4">Akun</th><th className="p-4">Role</th><th className="p-4">Email</th><th className="p-4">Verifikasi</th><th className="p-4">Status</th><th className="p-4">Aksi</th></tr></thead>
           <tbody>
             {users.map((user) => {
               const canToggle = user.role === 'siswa' || (role === 'admin' && user.role === 'petugas');
@@ -948,22 +973,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, email, onL
                 <td className="p-4 font-bold">{user.full_name || 'Tanpa nama'}</td>
                 <td className="p-4 uppercase text-xs font-black">{user.role}</td>
                 <td className="p-4">{user.email}</td>
+                <td className="p-4">{user.email_confirmed ? <span className="text-emerald-700 font-bold">Terverifikasi</span> : <span className="text-amber-700 font-bold">Belum verifikasi</span>}</td>
                 <td className="p-4">{user.is_blocked ? <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-red-800 font-bold"><Ban className="w-3 h-3" /> Diblokir</span> : <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-emerald-800 font-bold"><CheckCircle2 className="w-3 h-3" /> Aktif</span>}</td>
                 <td className="p-4">
                   <div className="flex flex-wrap gap-2">
                     {canToggle ? <button onClick={() => toggleBlock(user)} disabled={busyId === user.id} className={`rounded-xl border-2 border-[#1D3557] px-3 py-2 font-bold disabled:opacity-50 ${user.is_blocked ? 'bg-[#C7F9CC]' : 'bg-[#FFD6A5]'}`}>{busyId === user.id ? 'Memproses...' : user.is_blocked ? 'Buka blokir' : 'Blokir akun'}</button> : null}
-                    {role === 'admin' && user.role !== 'admin' && user.id !== undefined && (
-                      <>
-                        <button onClick={() => resetUserPassword(user)} disabled={busyId === `reset-${user.id}`} className="rounded-xl border-2 border-[#1D3557] px-3 py-2 font-bold bg-[#BDE0FE] disabled:opacity-50">{busyId === `reset-${user.id}` ? 'Memproses...' : <><KeyRound className="inline w-4 h-4 mr-1" />Reset password</>}</button>
-                        <button onClick={() => deleteUser(user)} disabled={busyId === `delete-${user.id}`} className="rounded-xl border-2 border-red-700 px-3 py-2 font-bold text-red-800 bg-red-50 disabled:opacity-50">{busyId === `delete-${user.id}` ? 'Menghapus...' : <><Trash2 className="inline w-4 h-4 mr-1" />Hapus</>}</button>
-                      </>
-                    )}
+                    {role === 'admin' && user.role !== 'admin' && user.id !== undefined ? <>
+                      <button onClick={() => resetUserPassword(user)} disabled={busyId === `reset-${user.id}` || busyId === `delete-${user.id}`} className="rounded-xl border-2 border-[#1D3557] px-3 py-2 font-bold bg-[#BDE0FE] disabled:opacity-50 flex items-center gap-1"> <KeyRound className="w-4 h-4" /> {busyId === `reset-${user.id}` ? 'Mereset...' : 'Reset password'}</button>
+                      <button onClick={() => deleteUser(user)} disabled={busyId === `delete-${user.id}` || busyId === `reset-${user.id}`} className="rounded-xl border-2 border-[#1D3557] px-3 py-2 font-bold bg-[#FFADAD] disabled:opacity-50 flex items-center gap-1"><Trash2 className="w-4 h-4" /> {busyId === `delete-${user.id}` ? 'Menghapus...' : 'Hapus akun'}</button>
+                    </> : null}
                     {!canToggle && role !== 'admin' && <span className="text-xs opacity-50">Tidak tersedia</span>}
                   </div>
                 </td>
               </tr>;
             })}
-            {!loadingUsers && users.length === 0 && <tr><td colSpan={5} className="p-8 text-center opacity-60">Belum ada data akun.</td></tr>}
+            {!loadingUsers && users.length === 0 && <tr><td colSpan={6} className="p-8 text-center opacity-60">Belum ada data akun.</td></tr>}
           </tbody>
         </table>
       </div>

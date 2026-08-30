@@ -15,6 +15,11 @@ import React, { FormEvent, useState } from 'react';
 
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
+const getPublicAppUrl = () => {
+  const configured = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.trim().replace(/\/$/, '');
+  return configured || window.location.origin;
+};
+
 type AuthMode = 'login' | 'register' | 'forgot' | 'reset';
 
 interface AuthPageProps {
@@ -53,7 +58,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [resendingVerification, setResendingVerification] = useState(false);
 
   const passwordChecks = getPasswordChecks(password);
 
@@ -87,27 +91,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     setConfirmPassword('');
 
     setMode(nextMode);
-  };
-
-  const publicAppUrl = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.replace(/\/$/, '') || window.location.origin;
-
-  const resendVerification = async () => {
-    if (!supabase || !emailValid || resendingVerification) return;
-    setResendingVerification(true);
-    resetFeedback();
-    try {
-      const { error: resendError } = await supabase.auth.resend({
-        type: 'signup',
-        email: email.trim(),
-        options: { emailRedirectTo: `${publicAppUrl}/` },
-      });
-      if (resendError) throw resendError;
-      setMessage('Email verifikasi dikirim ulang. Cek inbox dan folder spam.');
-    } catch (err: any) {
-      setError(err?.message || 'Gagal mengirim ulang email verifikasi.');
-    } finally {
-      setResendingVerification(false);
-    }
   };
 
   const handleSubmit = async (
@@ -229,7 +212,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
        */
 
       if (mode === 'register') {
-        const { error: signUpError } =
+        const { data: signUpData, error: signUpError } =
           await supabase.auth.signUp({
             email: email.trim(),
             password,
@@ -246,12 +229,19 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               },
 
               emailRedirectTo:
-                `${publicAppUrl}/`,
+                `${getPublicAppUrl()}/`,
             },
           });
 
         if (signUpError) {
           throw signUpError;
+        }
+
+        if (signUpData.user && Array.isArray(signUpData.user.identities) && signUpData.user.identities.length === 0) {
+          setMessage('Email tersebut sudah terdaftar. Jika akun belum diverifikasi, kembali ke Login dan gunakan opsi kirim ulang email verifikasi.');
+          setPassword('');
+          setConfirmPassword('');
+          return;
         }
 
         setMessage(
@@ -278,6 +268,20 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           });
 
         if (signInError) {
+          const authMessage = String(signInError.message || '').toLowerCase();
+          if (authMessage.includes('email not confirmed') || authMessage.includes('email_not_confirmed')) {
+            const resend = window.confirm('Email akun ini belum diverifikasi. Kirim ulang email verifikasi sekarang?');
+            if (resend) {
+              const { error: resendError } = await supabase.auth.resend({
+                type: 'signup',
+                email: email.trim(),
+                options: { emailRedirectTo: `${getPublicAppUrl()}/` },
+              });
+              if (resendError) throw resendError;
+              setMessage('Email verifikasi dikirim ulang. Cek inbox dan folder spam, lalu verifikasi sebelum login.');
+              return;
+            }
+          }
           throw signInError;
         }
 
@@ -298,7 +302,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             email.trim(),
             {
               redirectTo:
-                `${publicAppUrl}/?mode=reset-password`,
+                `${getPublicAppUrl()}/?mode=reset-password`,
             }
           );
 
@@ -550,17 +554,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </div>
 
             </div>
-          )}
-
-          {mode === 'login' && error.toLowerCase().includes('belum diverifikasi') && emailValid && (
-            <button
-              type="button"
-              onClick={resendVerification}
-              disabled={resendingVerification}
-              className="mb-5 w-full rounded-xl border-2 border-[#1D3557] px-4 py-2.5 font-bold bg-[#BDE0FE] disabled:opacity-50"
-            >
-              {resendingVerification ? 'Mengirim ulang...' : 'Kirim ulang email verifikasi'}
-            </button>
           )}
 
           <form

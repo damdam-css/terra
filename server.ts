@@ -256,6 +256,42 @@ async function startServer() {
     res.json({ success: true, message: "Akun diblokir." });
   });
 
+  app.post("/api/admin/users/:id/reset-password", async (req, res) => {
+    const staff = await requireStaff(req, res);
+    if (!staff) return;
+    if (staff.profile.role !== "admin") return res.status(403).json({ error: "Hanya admin yang dapat mereset password akun." });
+
+    const targetId = req.params.id;
+    if (targetId === staff.user.id) return res.status(400).json({ error: "Gunakan fitur reset password biasa untuk akun sendiri." });
+
+    const password = String(req.body?.password || "");
+    if (password.length < 8 || password.length > 128) return res.status(400).json({ error: "Password baru harus 8-128 karakter." });
+
+    const { data: target, error: targetError } = await supabaseAdmin!.from("profiles").select("id, role").eq("id", targetId).single();
+    if (targetError || !target) return res.status(404).json({ error: "Akun tidak ditemukan." });
+
+    const { error } = await supabaseAdmin!.auth.admin.updateUserById(targetId, { password });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, message: "Password akun berhasil direset." });
+  });
+
+  app.delete("/api/admin/users/:id", async (req, res) => {
+    const staff = await requireStaff(req, res);
+    if (!staff) return;
+    if (staff.profile.role !== "admin") return res.status(403).json({ error: "Hanya admin yang dapat menghapus akun." });
+
+    const targetId = req.params.id;
+    if (targetId === staff.user.id) return res.status(400).json({ error: "Admin tidak dapat menghapus akun sendiri." });
+
+    const { data: target, error: targetError } = await supabaseAdmin!.from("profiles").select("id, role").eq("id", targetId).single();
+    if (targetError || !target) return res.status(404).json({ error: "Akun tidak ditemukan." });
+    if (target.role === "admin") return res.status(403).json({ error: "Akun admin tidak dapat dihapus dari fitur ini." });
+
+    const { error } = await supabaseAdmin!.auth.admin.deleteUser(targetId);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, message: "Akun berhasil dihapus." });
+  });
+
   app.post("/api/admin/users/:id/unblock", async (req, res) => {
     const staff = await requireStaff(req, res);
     if (!staff) return;

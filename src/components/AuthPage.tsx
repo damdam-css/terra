@@ -53,6 +53,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [resendingVerification, setResendingVerification] = useState(false);
 
   const passwordChecks = getPasswordChecks(password);
 
@@ -86,6 +87,27 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     setConfirmPassword('');
 
     setMode(nextMode);
+  };
+
+  const publicAppUrl = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.replace(/\/$/, '') || window.location.origin;
+
+  const resendVerification = async () => {
+    if (!supabase || !emailValid || resendingVerification) return;
+    setResendingVerification(true);
+    resetFeedback();
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email: email.trim(),
+        options: { emailRedirectTo: `${publicAppUrl}/` },
+      });
+      if (resendError) throw resendError;
+      setMessage('Email verifikasi dikirim ulang. Cek inbox dan folder spam.');
+    } catch (err: any) {
+      setError(err?.message || 'Gagal mengirim ulang email verifikasi.');
+    } finally {
+      setResendingVerification(false);
+    }
   };
 
   const handleSubmit = async (
@@ -224,7 +246,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               },
 
               emailRedirectTo:
-                `${window.location.origin}/`,
+                `${publicAppUrl}/`,
             },
           });
 
@@ -276,7 +298,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             email.trim(),
             {
               redirectTo:
-                `${window.location.origin}/?mode=reset-password`,
+                `${publicAppUrl}/?mode=reset-password`,
             }
           );
 
@@ -528,6 +550,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </div>
 
             </div>
+          )}
+
+          {mode === 'login' && error.toLowerCase().includes('belum diverifikasi') && emailValid && (
+            <button
+              type="button"
+              onClick={resendVerification}
+              disabled={resendingVerification}
+              className="mb-5 w-full rounded-xl border-2 border-[#1D3557] px-4 py-2.5 font-bold bg-[#BDE0FE] disabled:opacity-50"
+            >
+              {resendingVerification ? 'Mengirim ulang...' : 'Kirim ulang email verifikasi'}
+            </button>
           )}
 
           <form

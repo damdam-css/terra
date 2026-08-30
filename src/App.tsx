@@ -145,6 +145,7 @@ export default function App() {
       setProfile({
         id: created.id,
         full_name: created.full_name || user.email || '',
+        username: created.username || null,
         role: created.role as UserRole,
         email: user.email || '',
         is_blocked: Boolean(created.is_blocked),
@@ -172,6 +173,7 @@ export default function App() {
     setProfile({
       id: data.id,
       full_name: data.full_name || user.email || '',
+      username: data.username || null,
       role: data.role as UserRole,
       email: user.email || '',
       is_blocked: Boolean(data.is_blocked),
@@ -339,6 +341,7 @@ export default function App() {
         email={profile.email}
         avatarUrl={profile.avatar_url}
         onUsernameUpdated={(username) => setProfile((current) => current ? { ...current, username } : current)}
+        onNameUpdated={(fullName) => setProfile((current) => current ? { ...current, full_name: fullName } : current)}
         onAvatarUpdated={(avatarUrl) => setProfile((current) => current ? { ...current, avatar_url: avatarUrl } : current)}
         onLogout={handleLogout}
         onBackToLanding={() => {

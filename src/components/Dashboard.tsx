@@ -39,6 +39,7 @@ interface DashboardProps {
   avatarUrl?: string | null;
   onAvatarUpdated?: (avatarUrl: string) => void;
   onUsernameUpdated?: (username: string) => void;
+  onNameUpdated?: (fullName: string) => void;
 }
 
 interface ManagedUser {
@@ -96,16 +97,28 @@ interface Redemption {
 const api = async (path: string, init: RequestInit = {}) => {
   if (!supabase) throw new Error('Supabase belum dikonfigurasi.');
 
-  const { data: { session } } = await supabase.auth.getSession();
+  let session = (await supabase.auth.getSession()).data.session;
+  if (!session?.access_token) {
+    const refreshed = await supabase.auth.refreshSession();
+    session = refreshed.data.session;
+  }
+  if (!session?.access_token) throw new Error('Sesi login belum siap. Silakan tunggu sebentar lalu coba lagi.');
 
-  const response = await fetch(path, {
+  const makeRequest = (accessToken: string) => fetch(path, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
       ...(init.headers || {}),
-      Authorization: `Bearer ${session?.access_token || ''}`,
+      Authorization: `Bearer ${accessToken}`,
     },
   });
+
+  let response = await makeRequest(session.access_token);
+  if (response.status === 401) {
+    const refreshed = await supabase.auth.refreshSession();
+    const newToken = refreshed.data.session?.access_token;
+    if (newToken) response = await makeRequest(newToken);
+  }
 
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || 'Request gagal.');
@@ -127,7 +140,7 @@ const statusClass = (status: string) => {
   return 'bg-amber-100 text-amber-800';
 };
 
-export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, email, onLogout, onBackToLanding, avatarUrl, onAvatarUpdated }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, username, email, onLogout, onBackToLanding, avatarUrl, onAvatarUpdated, onUsernameUpdated, onNameUpdated }) => {
   const roleLabel = role === 'admin' ? 'Administrator' : role === 'petugas' ? 'Petugas' : 'Siswa';
   const canManageUsers = role === 'admin' || role === 'petugas';
   const canVerify = canManageUsers;
@@ -149,6 +162,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, email, onL
   const [view, setView] = useState<'home' | 'bank' | 'scanner' | 'reward' | 'verify'>('home');
   const [isTerriOpen, setIsTerriOpen] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(fullName || '');
+  const [savingName, setSavingName] = useState(false);
   const [editingUsername, setEditingUsername] = useState(false);
   const [usernameInput, setUsernameInput] = useState(username || '');
   const [savingUsername, setSavingUsername] = useState(false);
@@ -593,6 +609,33 @@ Ketik YAKIN untuk melanjutkan:`,
     setUsernameInput(username || '');
   }, [username]);
 
+  useEffect(() => {
+    setNameInput(fullName || '');
+  }, [fullName]);
+
+  const saveName = async () => {
+    const value = nameInput.trim();
+    if (value.length < 2 || value.length > 60) {
+      showError('Nama harus 2-60 karakter.');
+      return;
+    }
+    setSavingName(true);
+    try {
+      const result = await api('/api/profile/name', {
+        method: 'PUT',
+        body: JSON.stringify({ full_name: value }),
+      });
+      onNameUpdated?.(result.full_name);
+      setNameInput(result.full_name);
+      setEditingName(false);
+      showNotice('Nama berhasil diperbarui.');
+    } catch (err: any) {
+      showError(err?.message || 'Gagal memperbarui nama.');
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   const saveUsername = async () => {
     const value = usernameInput.trim();
     if (!/^[A-Za-z0-9_]{3,30}$/.test(value)) {
@@ -631,27 +674,27 @@ Ketik YAKIN untuk melanjutkan:`,
           <div className="text-[10px] font-black uppercase opacity-60">Profil Pengguna</div>
           <div className="font-heading font-black text-xl">{fullName || 'Pengguna TERRA'}</div>
           <div className="text-sm opacity-60 break-all">{email}</div>
-          <div className="mt-2">
-            {editingUsername ? (
+          <div className="mt-3">
+            {editingName ? (
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
-                  value={usernameInput}
-                  onChange={(e) => setUsernameInput(e.target.value)}
-                  maxLength={30}
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  maxLength={60}
                   autoFocus
-                  placeholder="username"
+                  placeholder="Nama pengguna"
                   className="border-2 border-[#1D3557]/30 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#1D3557]"
                 />
-                <button type="button" onClick={saveUsername} disabled={savingUsername} className="border-2 border-[#1D3557] rounded-xl px-3 py-2 bg-[#C7F9CC] font-bold text-sm disabled:opacity-50">
-                  {savingUsername ? 'Menyimpan...' : 'Simpan'}
+                <button type="button" onClick={saveName} disabled={savingName} className="border-2 border-[#1D3557] rounded-xl px-3 py-2 bg-[#C7F9CC] font-bold text-sm disabled:opacity-50">
+                  {savingName ? 'Menyimpan...' : 'Simpan'}
                 </button>
-                <button type="button" onClick={() => { setUsernameInput(username || ''); setEditingUsername(false); }} disabled={savingUsername} className="border-2 border-[#1D3557] rounded-xl px-3 py-2 bg-white font-bold text-sm disabled:opacity-50">
+                <button type="button" onClick={() => { setNameInput(fullName || ''); setEditingName(false); }} disabled={savingName} className="border-2 border-[#1D3557] rounded-xl px-3 py-2 bg-white font-bold text-sm disabled:opacity-50">
                   Batal
                 </button>
               </div>
             ) : (
-              <button type="button" onClick={() => setEditingUsername(true)} className="text-sm font-bold underline underline-offset-2">
-                @{username || 'atur username'} · Ganti username
+              <button type="button" onClick={() => setEditingName(true)} className="border-2 border-[#1D3557] rounded-xl px-3 py-2 bg-[#FFF176] font-bold text-sm">
+                Ganti Nama
               </button>
             )}
           </div>

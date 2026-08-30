@@ -61,11 +61,13 @@ create table if not exists public.reward_redemptions (
   student_id uuid not null references public.profiles(id) on delete cascade,
   reward_id uuid not null references public.rewards(id),
   points_cost integer not null check (points_cost > 0),
-  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'picked_up')),
   verified_by uuid references public.profiles(id),
+  picked_up_by uuid references public.profiles(id),
   staff_note text,
   created_at timestamptz not null default now(),
-  verified_at timestamptz
+  verified_at timestamptz,
+  picked_up_at timestamptz
 );
 
 -- Private bucket untuk bukti foto setoran. Backend service_role yang mengunggah dan membuat signed URL.
@@ -74,6 +76,18 @@ values ('waste-deposit-photos', 'waste-deposit-photos', false, 5242880, array['i
 on conflict (id) do update set public = false, file_size_limit = 5242880, allowed_mime_types = excluded.allowed_mime_types;
 
 alter table public.waste_deposits add column if not exists photo_path text;
+
+-- Reward redemption lifecycle: pending -> approved -> picked_up (or rejected).
+-- Older databases may still have the original 3-value status constraint.
+alter table public.reward_redemptions
+  add column if not exists picked_up_by uuid references public.profiles(id);
+alter table public.reward_redemptions
+  add column if not exists picked_up_at timestamptz;
+alter table public.reward_redemptions
+  drop constraint if exists reward_redemptions_status_check;
+alter table public.reward_redemptions
+  add constraint reward_redemptions_status_check
+  check (status in ('pending', 'approved', 'rejected', 'picked_up'));
 
 
 -- Foto profil pengguna. Bucket publik hanya untuk avatar, bukan bukti setoran.
@@ -302,12 +316,67 @@ begin
 end;
 $$;
 
+-- Menandai reward yang sudah diserahkan secara fisik kepada siswa.
+-- Poin TIDAK dipotong di sini karena sudah dipotong saat approval.
+create or replace function public.mark_reward_redemption_picked_up(
+  p_redemption_id uuid,
+  p_staff_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  r public.reward_redemptions%rowtype;
+  staff_role text;
+begin
+  select role
+    into staff_role
+    from public.profiles
+   where id = p_staff_id
+     and not is_blocked;
+
+  if staff_role is null or staff_role not in ('admin', 'petugas') then
+    raise exception 'Akses verifikasi ditolak.';
+  end if;
+
+  select *
+    into r
+    from public.reward_redemptions
+   where id = p_redemption_id
+   for update;
+
+  if not found then
+    raise exception 'Penukaran reward tidak ditemukan.';
+  end if;
+
+  if r.status <> 'approved' then
+    raise exception 'Reward harus berstatus approved sebelum ditandai sudah diambil.';
+  end if;
+
+  update public.reward_redemptions
+     set status = 'picked_up',
+         picked_up_by = p_staff_id,
+         picked_up_at = now()
+   where id = p_redemption_id;
+
+  return jsonb_build_object(
+    'status', 'picked_up',
+    'redemption_id', p_redemption_id,
+    'picked_up_by', p_staff_id
+  );
+end;
+$$;
+
 -- RPC verifikasi hanya boleh dipanggil backend memakai service_role.
 -- Jangan biarkan client authenticated memanggil fungsi ini langsung.
 revoke execute on function public.approve_waste_deposit(uuid, uuid, boolean, text) from public, anon, authenticated;
 revoke execute on function public.approve_reward_redemption(uuid, uuid, boolean, text) from public, anon, authenticated;
+revoke execute on function public.mark_reward_redemption_picked_up(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.approve_waste_deposit(uuid, uuid, boolean, text) to service_role;
 grant execute on function public.approve_reward_redemption(uuid, uuid, boolean, text) to service_role;
+grant execute on function public.mark_reward_redemption_picked_up(uuid, uuid) to service_role;
 
 -- RLS. Semua operasi sensitif dilakukan backend dengan service role.
 alter table public.profiles enable row level security;

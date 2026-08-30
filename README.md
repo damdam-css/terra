@@ -152,3 +152,8 @@ Use `.env.local` and `npm run dev`.
 
 ### Reward pickup workflow
 Run `supabase/migrations/003_reward_pickup_status.sql` in the Supabase SQL Editor after the existing schema/migrations. It adds the `picked_up` redemption state and the staff action used after a student collects an approved reward.
+
+
+## Supabase reward pickup fix
+
+If an existing production database was created before the reward pickup feature, run `supabase/2026-08-30_reward-pickup-fix.sql` once in Supabase SQL Editor. It adds the `picked_up` lifecycle and the `mark_reward_redemption_picked_up(uuid, uuid)` RPC used by the staff dashboard.

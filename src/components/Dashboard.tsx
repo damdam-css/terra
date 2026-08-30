@@ -32,17 +32,20 @@ import { TerraAIModal } from './TerraAIModal';
 interface DashboardProps {
   role: UserRole;
   fullName: string;
+  username?: string | null;
   email: string;
   onLogout: () => void;
   onBackToLanding?: () => void;
   avatarUrl?: string | null;
   onAvatarUpdated?: (avatarUrl: string) => void;
+  onUsernameUpdated?: (username: string) => void;
 }
 
 interface ManagedUser {
   id: string;
   email: string;
   full_name: string;
+  username?: string;
   role: UserRole;
   is_blocked: boolean;
   email_confirmed: boolean;
@@ -146,6 +149,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, email, onL
   const [view, setView] = useState<'home' | 'bank' | 'scanner' | 'reward' | 'verify'>('home');
   const [isTerriOpen, setIsTerriOpen] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [editingUsername, setEditingUsername] = useState(false);
+  const [usernameInput, setUsernameInput] = useState(username || '');
+  const [savingUsername, setSavingUsername] = useState(false);
   const [adminRewards, setAdminRewards] = useState<Reward[]>([]);
   const [loadingAdminRewards, setLoadingAdminRewards] = useState(false);
 
@@ -583,6 +589,34 @@ Ketik YAKIN untuk melanjutkan:`,
     </>
   );
 
+  useEffect(() => {
+    setUsernameInput(username || '');
+  }, [username]);
+
+  const saveUsername = async () => {
+    const value = usernameInput.trim();
+    if (!/^[A-Za-z0-9_]{3,30}$/.test(value)) {
+      showError('Username harus 3-30 karakter dan hanya boleh berisi huruf, angka, atau underscore.');
+      return;
+    }
+
+    setSavingUsername(true);
+    try {
+      const result = await api('/api/profile/username', {
+        method: 'PUT',
+        body: JSON.stringify({ username: value }),
+      });
+      onUsernameUpdated?.(result.username);
+      setUsernameInput(result.username);
+      setEditingUsername(false);
+      showNotice('Username berhasil diperbarui.');
+    } catch (err: any) {
+      showError(err?.message || 'Gagal memperbarui username.');
+    } finally {
+      setSavingUsername(false);
+    }
+  };
+
   const ProfilePanel = () => (
     <section className="mb-6 bg-white border-2 border-[#1D3557] rounded-3xl p-5 shadow-[0_5px_0_0_#1D3557]">
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -597,6 +631,30 @@ Ketik YAKIN untuk melanjutkan:`,
           <div className="text-[10px] font-black uppercase opacity-60">Profil Pengguna</div>
           <div className="font-heading font-black text-xl">{fullName || 'Pengguna TERRA'}</div>
           <div className="text-sm opacity-60 break-all">{email}</div>
+          <div className="mt-2">
+            {editingUsername ? (
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  value={usernameInput}
+                  onChange={(e) => setUsernameInput(e.target.value)}
+                  maxLength={30}
+                  autoFocus
+                  placeholder="username"
+                  className="border-2 border-[#1D3557]/30 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-[#1D3557]"
+                />
+                <button type="button" onClick={saveUsername} disabled={savingUsername} className="border-2 border-[#1D3557] rounded-xl px-3 py-2 bg-[#C7F9CC] font-bold text-sm disabled:opacity-50">
+                  {savingUsername ? 'Menyimpan...' : 'Simpan'}
+                </button>
+                <button type="button" onClick={() => { setUsernameInput(username || ''); setEditingUsername(false); }} disabled={savingUsername} className="border-2 border-[#1D3557] rounded-xl px-3 py-2 bg-white font-bold text-sm disabled:opacity-50">
+                  Batal
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setEditingUsername(true)} className="text-sm font-bold underline underline-offset-2">
+                @{username || 'atur username'} · Ganti username
+              </button>
+            )}
+          </div>
         </div>
         <label className="border-2 border-[#1D3557] rounded-xl px-4 py-2.5 bg-[#FFF176] font-bold text-sm cursor-pointer hover:bg-[#ffe94d] text-center">
           {uploadingAvatar ? 'Mengunggah...' : 'Ganti Foto Profil'}
@@ -970,7 +1028,7 @@ Ketik YAKIN untuk melanjutkan:`,
             {users.map((user) => {
               const canToggle = user.role === 'siswa' || (role === 'admin' && user.role === 'petugas');
               return <tr key={user.id} className="border-t-2 border-[#1D3557]/10">
-                <td className="p-4 font-bold">{user.full_name || 'Tanpa nama'}</td>
+                <td className="p-4 font-bold">{user.full_name || 'Tanpa nama'}{user.username ? <div className="text-xs font-normal opacity-60">@{user.username}</div> : null}</td>
                 <td className="p-4 uppercase text-xs font-black">{user.role}</td>
                 <td className="p-4">{user.email}</td>
                 <td className="p-4">{user.email_confirmed ? <span className="text-emerald-700 font-bold">Terverifikasi</span> : <span className="text-amber-700 font-bold">Belum verifikasi</span>}</td>

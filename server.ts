@@ -216,7 +216,7 @@ async function startServer() {
 
     const { data: profiles, error: profileError } = await supabaseAdmin!
       .from("profiles")
-      .select("id, full_name, role, is_blocked, created_at");
+      .select("id, full_name, username, role, is_blocked, created_at");
     if (profileError) return res.status(500).json({ error: profileError.message });
 
     const profileMap = new Map(((profiles || []) as any[]).map((p: any) => [p.id, p]));
@@ -226,6 +226,7 @@ async function startServer() {
         id: u.id,
         email: u.email || "",
         full_name: p.full_name || u.user_metadata?.full_name || "",
+        username: p.username || "",
         role: p.role || "siswa",
         is_blocked: Boolean(p.is_blocked) || Boolean(u.banned_until && new Date(u.banned_until).getTime() > Date.now()),
         email_confirmed: Boolean(u.email_confirmed_at),
@@ -261,28 +262,16 @@ async function startServer() {
     if (!staff) return;
     if (staff.profile.role !== "admin") return res.status(403).json({ error: "Hanya admin yang dapat menghapus akun." });
 
-    const targetId = String(req.params.id || "").trim();
-    if (!targetId) return res.status(400).json({ error: "ID akun tidak valid." });
+    const targetId = req.params.id;
     if (targetId === staff.user.id) return res.status(400).json({ error: "Admin tidak bisa menghapus akun sendiri." });
 
-    // Jangan bergantung pada keberadaan row profiles. Daftar admin mengambil data
-    // dari Supabase Auth, sehingga akun Auth tanpa profile tetap harus bisa dihapus.
-    const { data: authTarget, error: authLookupError } = await supabaseAdmin!.auth.admin.getUserById(targetId);
-    if (authLookupError || !authTarget?.user) return res.status(404).json({ error: "Akun Auth tidak ditemukan atau sudah dihapus." });
-
-    const { data: targetProfile, error: targetProfileError } = await supabaseAdmin!
-      .from("profiles")
-      .select("id, role")
-      .eq("id", targetId)
-      .maybeSingle();
-    if (targetProfileError) return res.status(500).json({ error: targetProfileError.message });
-    if (targetProfile?.role === "admin") return res.status(403).json({ error: "Akun admin lain tidak bisa dihapus dari panel ini." });
+    const { data: target, error: targetError } = await supabaseAdmin!.from("profiles").select("id, role, full_name").eq("id", targetId).maybeSingle();
+    if (targetError) return res.status(500).json({ error: targetError.message });
+    if (!target) return res.status(404).json({ error: "Akun tidak ditemukan." });
+    if (target.role === "admin") return res.status(403).json({ error: "Akun admin lain tidak bisa dihapus dari panel ini." });
 
     const { error: deleteError } = await supabaseAdmin!.auth.admin.deleteUser(targetId);
-    if (deleteError) {
-      console.error("Admin delete user failed:", deleteError.message);
-      return res.status(500).json({ error: `Gagal menghapus akun: ${deleteError.message}` });
-    }
+    if (deleteError) return res.status(500).json({ error: deleteError.message });
 
     res.json({ success: true, message: "Akun berhasil dihapus permanen." });
   });
@@ -298,12 +287,10 @@ async function startServer() {
     const password = String(req.body?.password || "");
     if (password.length < 8 || password.length > 128) return res.status(400).json({ error: "Password baru harus 8-128 karakter." });
 
-    const { data: authTarget, error: authLookupError } = await supabaseAdmin!.auth.admin.getUserById(targetId);
-    if (authLookupError || !authTarget?.user) return res.status(404).json({ error: "Akun Auth tidak ditemukan atau sudah dihapus." });
-
     const { data: target, error: targetError } = await supabaseAdmin!.from("profiles").select("id, role").eq("id", targetId).maybeSingle();
     if (targetError) return res.status(500).json({ error: targetError.message });
-    if (target?.role === "admin") return res.status(403).json({ error: "Password admin lain tidak dapat diubah dari panel ini." });
+    if (!target) return res.status(404).json({ error: "Akun tidak ditemukan." });
+    if (target.role === "admin") return res.status(403).json({ error: "Password admin lain tidak dapat diubah dari panel ini." });
 
     const { error: resetError } = await supabaseAdmin!.auth.admin.updateUserById(targetId, { password });
     if (resetError) return res.status(500).json({ error: resetError.message });
@@ -427,7 +414,7 @@ async function startServer() {
 
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
-      .select("id, role, is_blocked, full_name")
+      .select("id, role, is_blocked, full_name, username")
       .eq("id", user.id)
       .single();
 
@@ -438,6 +425,37 @@ async function startServer() {
 
     return { user, profile };
   }
+
+  // Update username milik akun yang sedang login.
+  // Validasi dilakukan di server supaya aturan tidak bisa dilewati dari browser.
+  app.put("/api/profile/username", async (req, res) => {
+    const auth = await requireUser(req, res);
+    if (!auth) return;
+
+    const username = String(req.body?.username || "").trim();
+
+    if (!/^[A-Za-z0-9_]{3,30}$/.test(username)) {
+      return res.status(400).json({
+        error: "Username harus 3-30 karakter dan hanya boleh berisi huruf, angka, atau underscore.",
+      });
+    }
+
+    const { data: updated, error: updateError } = await supabaseAdmin!
+      .from("profiles")
+      .update({ username })
+      .eq("id", auth.user.id)
+      .select("id, username")
+      .single();
+
+    if (updateError) {
+      if (String(updateError.message || "").toLowerCase().includes("duplicate")) {
+        return res.status(409).json({ error: "Username sudah digunakan. Pilih username lain." });
+      }
+      return res.status(500).json({ error: updateError.message });
+    }
+
+    res.json({ success: true, username: updated.username });
+  });
 
   app.get("/api/student/dashboard", async (req, res) => {
     const auth = await requireUser(req, res);

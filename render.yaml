@@ -23,5 +23,3 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: VITE_PUBLIC_APP_URL
-        sync: false

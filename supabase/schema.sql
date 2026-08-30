@@ -4,6 +4,7 @@
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null default '',
+  username text,
   role text not null default 'siswa' check (role in ('siswa', 'petugas', 'admin')),
   is_blocked boolean not null default false,
   avatar_url text,
@@ -12,6 +13,12 @@ create table if not exists public.profiles (
 
 alter table public.profiles add column if not exists is_blocked boolean not null default false;
 alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists username text;
+
+create unique index if not exists profiles_username_unique
+  on public.profiles (lower(username))
+  where username is not null;
+
 
 create table if not exists public.point_wallets (
   user_id uuid primary key references public.profiles(id) on delete cascade,

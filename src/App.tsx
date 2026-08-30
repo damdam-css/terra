@@ -18,6 +18,7 @@ import { Trophy } from 'lucide-react';
 interface Profile {
   id: string;
   full_name: string;
+  username: string | null;
   role: UserRole;
   email: string;
   is_blocked: boolean;
@@ -108,7 +109,7 @@ export default function App() {
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, role, is_blocked')
+      .select('id, full_name, username, role, is_blocked')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -131,7 +132,7 @@ export default function App() {
           role: 'siswa',
           is_blocked: false,
         })
-        .select('id, full_name, role, is_blocked')
+        .select('id, full_name, username, role, is_blocked')
         .single();
 
       if (createError || !created) {
@@ -334,8 +335,10 @@ export default function App() {
       <Dashboard
         role={profile.role}
         fullName={profile.full_name}
+        username={profile.username}
         email={profile.email}
         avatarUrl={profile.avatar_url}
+        onUsernameUpdated={(username) => setProfile((current) => current ? { ...current, username } : current)}
         onAvatarUpdated={(avatarUrl) => setProfile((current) => current ? { ...current, avatar_url: avatarUrl } : current)}
         onLogout={handleLogout}
         onBackToLanding={() => {

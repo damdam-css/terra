@@ -261,16 +261,28 @@ async function startServer() {
     if (!staff) return;
     if (staff.profile.role !== "admin") return res.status(403).json({ error: "Hanya admin yang dapat menghapus akun." });
 
-    const targetId = req.params.id;
+    const targetId = String(req.params.id || "").trim();
+    if (!targetId) return res.status(400).json({ error: "ID akun tidak valid." });
     if (targetId === staff.user.id) return res.status(400).json({ error: "Admin tidak bisa menghapus akun sendiri." });
 
-    const { data: target, error: targetError } = await supabaseAdmin!.from("profiles").select("id, role, full_name").eq("id", targetId).maybeSingle();
-    if (targetError) return res.status(500).json({ error: targetError.message });
-    if (!target) return res.status(404).json({ error: "Akun tidak ditemukan." });
-    if (target.role === "admin") return res.status(403).json({ error: "Akun admin lain tidak bisa dihapus dari panel ini." });
+    // Jangan bergantung pada keberadaan row profiles. Daftar admin mengambil data
+    // dari Supabase Auth, sehingga akun Auth tanpa profile tetap harus bisa dihapus.
+    const { data: authTarget, error: authLookupError } = await supabaseAdmin!.auth.admin.getUserById(targetId);
+    if (authLookupError || !authTarget?.user) return res.status(404).json({ error: "Akun Auth tidak ditemukan atau sudah dihapus." });
+
+    const { data: targetProfile, error: targetProfileError } = await supabaseAdmin!
+      .from("profiles")
+      .select("id, role")
+      .eq("id", targetId)
+      .maybeSingle();
+    if (targetProfileError) return res.status(500).json({ error: targetProfileError.message });
+    if (targetProfile?.role === "admin") return res.status(403).json({ error: "Akun admin lain tidak bisa dihapus dari panel ini." });
 
     const { error: deleteError } = await supabaseAdmin!.auth.admin.deleteUser(targetId);
-    if (deleteError) return res.status(500).json({ error: deleteError.message });
+    if (deleteError) {
+      console.error("Admin delete user failed:", deleteError.message);
+      return res.status(500).json({ error: `Gagal menghapus akun: ${deleteError.message}` });
+    }
 
     res.json({ success: true, message: "Akun berhasil dihapus permanen." });
   });
@@ -286,10 +298,12 @@ async function startServer() {
     const password = String(req.body?.password || "");
     if (password.length < 8 || password.length > 128) return res.status(400).json({ error: "Password baru harus 8-128 karakter." });
 
+    const { data: authTarget, error: authLookupError } = await supabaseAdmin!.auth.admin.getUserById(targetId);
+    if (authLookupError || !authTarget?.user) return res.status(404).json({ error: "Akun Auth tidak ditemukan atau sudah dihapus." });
+
     const { data: target, error: targetError } = await supabaseAdmin!.from("profiles").select("id, role").eq("id", targetId).maybeSingle();
     if (targetError) return res.status(500).json({ error: targetError.message });
-    if (!target) return res.status(404).json({ error: "Akun tidak ditemukan." });
-    if (target.role === "admin") return res.status(403).json({ error: "Password admin lain tidak dapat diubah dari panel ini." });
+    if (target?.role === "admin") return res.status(403).json({ error: "Password admin lain tidak dapat diubah dari panel ini." });
 
     const { error: resetError } = await supabaseAdmin!.auth.admin.updateUserById(targetId, { password });
     if (resetError) return res.status(500).json({ error: resetError.message });

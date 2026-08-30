@@ -86,6 +86,15 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/education')
+      .then(async (r) => { const body = await r.json().catch(() => ({})); if (!r.ok) throw new Error(body.error || 'Gagal memuat materi.'); return body; })
+      .then((body) => { if (!cancelled && Array.isArray(body.modules) && body.modules.length) setEduModules((prev) => [...prev.filter((m) => !m.isCustom), ...body.modules]); })
+      .catch((err) => console.warn('Materi custom belum dimuat:', err));
+    return () => { cancelled = true; };
+  }, []);
+
 
   const loadProfile = async (knownUser?: { id: string; email?: string; user_metadata?: Record<string, any> }): Promise<boolean> => {
     if (!supabase) return false;
@@ -250,23 +259,37 @@ export default function App() {
     }
   };
 
-  const handleAddEduModule = (newMod: EduModule) => {
-    if (profile?.role !== 'admin') return;
-    const updated = [...eduModules, newMod];
-    setEduModules(updated);
-    localStorage.setItem('terra_custom_edu_modules', JSON.stringify(updated));
-    showXpToast(0, `Materi Baru "${newMod.title}" berhasil ditambahkan.`);
+  const handleAddEduModule = async (newMod: EduModule) => {
+    if (profile?.role !== 'admin' || !supabase) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/education', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+        body: JSON.stringify({ module: newMod }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Gagal menyimpan materi.');
+      setEduModules((prev) => [...prev, body.module]);
+      showXpToast(0, `Materi Baru "${newMod.title}" berhasil ditambahkan.`);
+    } catch (err: any) {
+      showXpToast(0, err?.message || 'Gagal menyimpan materi.');
+    }
   };
 
-  const handleDeleteEduModule = (moduleId: string) => {
-    if (profile?.role !== 'admin') return;
-    const updated = eduModules.filter((m) => m.id !== moduleId);
-    setEduModules(updated);
-    localStorage.setItem('terra_custom_edu_modules', JSON.stringify(updated));
-    const updatedCompleted = completedModules.filter((id) => id !== moduleId);
-    setCompletedModules(updatedCompleted);
-    localStorage.setItem('terra_completed_modules', JSON.stringify(updatedCompleted));
-    showXpToast(0, 'Materi berhasil dihapus');
+  const handleDeleteEduModule = async (moduleId: string) => {
+    if (profile?.role !== 'admin' || !supabase) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`/api/admin/education/${moduleId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session?.access_token || ''}` } });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Gagal menghapus materi.');
+      setEduModules((prev) => prev.filter((m) => m.id !== moduleId));
+      setCompletedModules((prev) => prev.filter((id) => id !== moduleId));
+      showXpToast(0, 'Materi berhasil dihapus');
+    } catch (err: any) {
+      showXpToast(0, err?.message || 'Gagal menghapus materi.');
+    }
   };
 
   const handleResetEduProgress = () => {

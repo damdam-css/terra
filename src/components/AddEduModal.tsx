@@ -77,7 +77,7 @@ export const AddEduModal: React.FC<AddEduModalProps> = ({ onClose, onAddModule }
       category: category as any,
       color: stageColorMap[stage].color,
       duration: duration.trim() || '5 Menit',
-      xp: 50,
+      xp: 0,
       completed: false,
       isCustom: true,
       summary: summary.trim(),

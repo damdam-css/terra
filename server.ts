@@ -276,6 +276,78 @@ async function startServer() {
 
 
   // =========================
+  // ADMIN: REWARD + EDU MANAGEMENT
+  // =========================
+
+  app.get("/api/admin/rewards", async (req, res) => {
+    const staff = await requireStaff(req, res);
+    if (!staff) return;
+    if (staff.profile.role !== "admin") return res.status(403).json({ error: "Hanya admin yang dapat mengelola reward." });
+    const { data, error } = await supabaseAdmin!.from("rewards").select("id, name, description, points_cost, stock, active, created_at").order("points_cost", { ascending: true });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, rewards: data || [] });
+  });
+
+  app.patch("/api/admin/rewards/:id", async (req, res) => {
+    const staff = await requireStaff(req, res);
+    if (!staff) return;
+    if (staff.profile.role !== "admin") return res.status(403).json({ error: "Hanya admin yang dapat mengubah reward." });
+    const { name, description, points_cost, stock, active } = req.body || {};
+    const patch: any = {};
+    if (typeof name === "string" && name.trim()) patch.name = name.trim().slice(0, 120);
+    if (typeof description === "string") patch.description = description.trim().slice(0, 500);
+    if (points_cost !== undefined) { const n = Number(points_cost); if (!Number.isInteger(n) || n <= 0 || n > 1000000) return res.status(400).json({ error: "Biaya poin harus bilangan bulat lebih dari 0." }); patch.points_cost = n; }
+    if (stock !== undefined) { const n = Number(stock); if (!Number.isInteger(n) || n < 0 || n > 1000000) return res.status(400).json({ error: "Stok tidak valid." }); patch.stock = n; }
+    if (active !== undefined) patch.active = Boolean(active);
+    if (!Object.keys(patch).length) return res.status(400).json({ error: "Tidak ada perubahan." });
+    const { data, error } = await supabaseAdmin!.from("rewards").update(patch).eq("id", req.params.id).select("id, name, description, points_cost, stock, active, created_at").single();
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ success: true, reward: data });
+  });
+
+  app.post("/api/admin/rewards", async (req, res) => {
+    const staff = await requireStaff(req, res);
+    if (!staff) return;
+    if (staff.profile.role !== "admin") return res.status(403).json({ error: "Hanya admin yang dapat menambah reward." });
+    const { name, description = "", points_cost, stock = 0, active = true } = req.body || {};
+    const cost = Number(points_cost); const qty = Number(stock);
+    if (!String(name || '').trim() || !Number.isInteger(cost) || cost <= 0 || !Number.isInteger(qty) || qty < 0) return res.status(400).json({ error: "Data reward tidak valid." });
+    const { data, error } = await supabaseAdmin!.from("rewards").insert({ name: String(name).trim().slice(0,120), description: String(description).trim().slice(0,500), points_cost: cost, stock: qty, active: Boolean(active) }).select("id, name, description, points_cost, stock, active, created_at").single();
+    if (error) return res.status(400).json({ error: error.message });
+    res.status(201).json({ success: true, reward: data });
+  });
+
+  app.get("/api/education", async (_req, res) => {
+    if (!supabaseAdmin) return res.status(503).json({ error: "Supabase belum dikonfigurasi." });
+    const { data, error } = await supabaseAdmin.from("education_modules").select("id, data, created_at, updated_at").order("created_at", { ascending: true });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, modules: (data || []).map((r: any) => ({ ...r.data, id: r.id, isCustom: true })) });
+  });
+
+  app.post("/api/admin/education", async (req, res) => {
+    const staff = await requireStaff(req, res);
+    if (!staff) return;
+    if (staff.profile.role !== "admin") return res.status(403).json({ error: "Hanya admin yang dapat menambah materi." });
+    const mod = req.body?.module;
+    if (!mod || typeof mod !== "object" || !mod.title || !mod.summary || !mod.quiz) return res.status(400).json({ error: "Materi tidak lengkap." });
+    const clean = { ...mod, id: undefined, isCustom: true, xp: 0, completed: false };
+    delete clean.id;
+    const { data, error } = await supabaseAdmin!.from("education_modules").insert({ data: clean }).select("id, data, created_at, updated_at").single();
+    if (error) return res.status(400).json({ error: error.message });
+    res.status(201).json({ success: true, module: { ...data.data, id: data.id, isCustom: true } });
+  });
+
+  app.delete("/api/admin/education/:id", async (req, res) => {
+    const staff = await requireStaff(req, res);
+    if (!staff) return;
+    if (staff.profile.role !== "admin") return res.status(403).json({ error: "Hanya admin yang dapat menghapus materi." });
+    const { error } = await supabaseAdmin!.from("education_modules").delete().eq("id", req.params.id);
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ success: true });
+  });
+
+
+  // =========================
   // TERRA BANK SAMPAH + REWARD API
   // =========================
 

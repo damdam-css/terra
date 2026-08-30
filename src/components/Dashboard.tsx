@@ -144,6 +144,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, email, onL
   const [view, setView] = useState<'home' | 'bank' | 'scanner' | 'reward' | 'verify'>('home');
   const [isTerriOpen, setIsTerriOpen] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [adminRewards, setAdminRewards] = useState<Reward[]>([]);
+  const [loadingAdminRewards, setLoadingAdminRewards] = useState(false);
 
   const [depositForm, setDepositForm] = useState({
     bankName: 'Bank Sampah TERRA Sekolah',
@@ -219,6 +221,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, email, onL
     }
   };
 
+  const loadAdminRewards = useCallback(async () => {
+    if (role !== 'admin') return;
+    setLoadingAdminRewards(true);
+    try {
+      const result = await api('/api/admin/rewards');
+      setAdminRewards(result.rewards || []);
+    } catch (err: any) {
+      showError(err?.message || 'Gagal memuat pengaturan reward.');
+    } finally { setLoadingAdminRewards(false); }
+  }, [role]);
+
+  const updateAdminReward = async (reward: Reward, patch: Partial<Reward>) => {
+    setBusyId(`reward-admin-${reward.id}`);
+    try {
+      const result = await api(`/api/admin/rewards/${reward.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+      setAdminRewards((prev) => prev.map((r) => r.id === reward.id ? result.reward : r));
+      setRewards((prev) => prev.map((r) => r.id === reward.id ? result.reward : r));
+      showNotice('Pengaturan reward berhasil disimpan.');
+    } catch (err: any) { showError(err?.message || 'Gagal mengubah reward.'); }
+    finally { setBusyId(null); }
+  };
+
   const loadLeaderboard = useCallback(async () => {
     setLoadingLeaderboard(true);
     try {
@@ -278,6 +302,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, email, onL
 
   useEffect(() => {
     if (role === 'siswa') loadStudentData();
+    if (role === 'admin') loadAdminRewards();
     if (canVerify) loadStaffData();
     if (canManageUsers) loadUsers();
   }, [role, canVerify, canManageUsers, loadStudentData, loadStaffData, loadUsers]);
@@ -851,6 +876,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, email, onL
     </>
   );
 
+  const RewardManagement = () => (
+    <section className="mt-8 bg-white border-2 border-[#1D3557] rounded-3xl shadow-[0_6px_0_0_#1D3557] overflow-hidden">
+      <div className="p-5 border-b-2 border-[#1D3557]/10 flex items-center justify-between">
+        <div><h2 className="font-heading font-black text-2xl">Pengaturan Reward</h2><p className="text-sm opacity-60">Admin bisa mengubah biaya poin, stok, dan status reward.</p></div>
+        <button onClick={loadAdminRewards} disabled={loadingAdminRewards} className="border-2 border-[#1D3557] rounded-xl px-3 py-2 font-bold"><RefreshCw className={`w-4 h-4 ${loadingAdminRewards ? 'animate-spin' : ''}`} /></button>
+      </div>
+      <div className="p-5 space-y-3">
+        {adminRewards.map((reward) => (
+          <div key={reward.id} className="grid grid-cols-1 md:grid-cols-[1fr_130px_110px_110px_auto] gap-3 items-center border-2 border-[#1D3557]/10 rounded-2xl p-3">
+            <div><div className="font-black">{reward.name}</div><div className="text-xs opacity-60">{reward.description}</div></div>
+            <input type="number" min="1" value={reward.points_cost} onChange={(e) => setAdminRewards((p) => p.map((r) => r.id === reward.id ? { ...r, points_cost: Number(e.target.value) } : r))} className="border-2 border-[#1D3557]/20 rounded-xl px-3 py-2 font-bold" title="Biaya poin" />
+            <input type="number" min="0" value={reward.stock} onChange={(e) => setAdminRewards((p) => p.map((r) => r.id === reward.id ? { ...r, stock: Number(e.target.value) } : r))} className="border-2 border-[#1D3557]/20 rounded-xl px-3 py-2 font-bold" title="Stok" />
+            <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={reward.active} onChange={(e) => updateAdminReward(reward, { active: e.target.checked })} /> Aktif</label>
+            <button disabled={busyId === `reward-admin-${reward.id}`} onClick={() => updateAdminReward(reward, { points_cost: reward.points_cost, stock: reward.stock })} className="border-2 border-[#1D3557] rounded-xl px-3 py-2 font-black bg-[#FFF176] disabled:opacity-50">{busyId === `reward-admin-${reward.id}` ? 'Menyimpan...' : 'Simpan'}</button>
+          </div>
+        ))}
+        {!loadingAdminRewards && adminRewards.length === 0 && <div className="p-6 text-center opacity-60">Belum ada reward.</div>}
+      </div>
+    </section>
+  );
+
   const UserManagement = () => (
     <section className="mt-8 bg-white border-2 border-[#1D3557] rounded-3xl shadow-[0_6px_0_0_#1D3557] overflow-hidden">
       <div className="p-5 border-b-2 border-[#1D3557]/10 flex items-center justify-between gap-3">
@@ -906,6 +952,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ role, fullName, email, onL
                   <div className="bg-white border-2 border-[#1D3557] rounded-2xl p-5 shadow-[0_5px_0_0_#1D3557]"><ShieldCheck className="w-8 h-8 mb-4" /><h2 className="font-heading font-black text-xl">Keamanan</h2><p className="text-sm opacity-65 mt-1">Akses dibatasi berdasarkan role dan status blokir.</p></div>
                 </div>
                 <UserManagement />
+                {role === 'admin' && <RewardManagement />}
               </>
             )}
             {view === 'verify' && <><button onClick={() => setView('home')} className="mb-5 flex items-center gap-2 font-bold text-sm hover:underline"><ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard</button><VerificationPanel /></>}
